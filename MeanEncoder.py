@@ -1,17 +1,20 @@
 import numpy as np
 import pandas as pd
-from sklearn.model_selection import StratifiedKFold
+from sklearn.model_selection import StratifiedKFold, KFold
 from itertools import product
 
 class MeanEncoder:
     def __init__(self, categorical_features, n_splits=5, target_type='classification', prior_weight_func=None):
         """
+
         :param categorical_features: list of str, the name of the categorical columns to encode
+        : input parameter
 
         :param n_splits: the number of splits used in mean encoding
+        : cross validation setting
 
         :param target_type: str, 'regression' or 'classification'
-
+        :
         :param prior_weight_func:
         a function that takes in the number of observations, and outputs prior weight
         when a dict is passed, the default exponential decay function will be used:
@@ -39,8 +42,8 @@ class MeanEncoder:
 
     @staticmethod
     def mean_encode_subroutine(X_train, y_train, X_test, variable, target, prior_weight_func):
-        X_train = X_train[[variable]].copy()
-        X_test = X_test[[variable]].copy()
+        X_train = pd.DataFrame(X_train[variable].copy())
+        X_test = pd.DataFrame(X_test[variable].copy())
 
         if target is not None:
             nf_name = '{}_pred_{}'.format(variable, target)
@@ -56,7 +59,8 @@ class MeanEncoder:
         col_avg_y.drop(['beta', 'mean'], axis=1, inplace=True)
 
         nf_train = X_train.join(col_avg_y, on=variable)[nf_name].values
-        nf_test = X_test.join(col_avg_y, on=variable).fillna(prior, inplace=False)[nf_name].values
+        #nf_test = X_test.join(col_avg_y, on=variable).fillna(prior, inplace=False)[nf_name].values
+        nf_test = X_test.join(col_avg_y, on=variable)[nf_name].values
 
         return nf_train, nf_test, prior, col_avg_y
 
@@ -78,7 +82,9 @@ class MeanEncoder:
                                   product(self.categorical_features, self.target_values)}
             for variable, target in product(self.categorical_features, self.target_values):
                 nf_name = '{}_pred_{}'.format(variable, target)
+                # np.nan is null
                 X_new.loc[:, nf_name] = np.nan
+                # cv.split(y, y)
                 for large_ind, small_ind in skf.split(y, y):
                     nf_large, nf_small, prior, col_avg_y = MeanEncoder.mean_encode_subroutine(
                         X_new.iloc[large_ind], y.iloc[large_ind], X_new.iloc[small_ind], variable, target, self.prior_weight_func)
@@ -108,16 +114,36 @@ class MeanEncoder:
                 nf_name = '{}_pred_{}'.format(variable, target)
                 X_new[nf_name] = 0
                 for prior, col_avg_y in self.learned_stats[nf_name]:
-                    X_new[nf_name] += X_new[[variable]].join(col_avg_y, on=variable).fillna(prior, inplace=False)[
-                        nf_name]
+                    X_new[nf_name] += X_new[[variable]].join(col_avg_y, on=variable)[nf_name]
+                    #X_new[nf_name] += X_new[[variable]].join(col_avg_y, on=variable).fillna(prior, inplace=False)[nf_name]
                 X_new[nf_name] /= self.n_splits
         else:
             for variable in self.categorical_features:
                 nf_name = '{}_pred'.format(variable)
                 X_new[nf_name] = 0
                 for prior, col_avg_y in self.learned_stats[nf_name]:
-                    X_new[nf_name] += X_new[[variable]].join(col_avg_y, on=variable).fillna(prior, inplace=False)[
-                        nf_name]
+                    X_new[nf_name] += X_new[[variable]].join(col_avg_y, on=variable)[nf_name]
+                    #X_new[nf_name] += X_new[[variable]].join(col_avg_y, on=variable).fillna(prior, inplace=False)[nf_name]
                 X_new[nf_name] /= self.n_splits
 
         return X_new
+
+if __name__ == "__main__":
+    dic  = {'k': 3, 'f': 5}
+    a= MeanEncoder(['asdf'], prior_weight_func = dic)
+    #dict(a.prior_weight_func, np=np)
+    #print map(a.prior_weight_func, [1,100])
+    #print dict(dic , np=np)
+    df = pd.read_csv('test.csv')
+    df['device'] = df['device'].astype('category')
+    df['test'] = df['test'].astype('category')
+    df['is_attributed'] = df['is_attributed'].astype('category')
+    df.describe()
+
+    y = df['is_attributed']
+    x = df.drop(['is_attributed'], axis=1)
+    data = MeanEncoder(['device'])
+
+    data.fit_transform(x, y)
+    x_new = data.transform(x)
+    print x_new
